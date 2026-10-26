@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+  REGISTRY: ghcr.io
+  TEST_RESULTS_DIR: test-results
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    outputs:
+      project-type: ${{ steps.detect.outputs.project-type }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Detect project type
+        id: detect
+        run: echo "project-type=$(./run-tests.sh --detect)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Type check (React)
+        if: steps.detect.outputs.project-type == 'react'
+        run: npx tsc
+
+      - name: Type check (Node.js)
+        if: steps.detect.outputs.project-type == 'node'
+        run: npx tsc --noEmit -p tsconfig.build.json
+
+      - name: Run tests
+        run: ./run-tests.sh
+
+      - name: Publish test report
+        if: ${{ !cancelled() }}
+        uses: dorny/test-reporter@v3
+        with:
+          name: Tests (${{ steps.detect.outputs.project-type }})
+          path: ${{ env.TEST_RESULTS_DIR }}/junit.xml
+          reporter: jest-junit
+          fail-on-empty: true
+
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ steps.detect.outputs.project-type }}
+          path: ${{ env.TEST_RESULTS_DIR }}/
+          retention-days: 14
