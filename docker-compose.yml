@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: olympic-participation-tracker:latest
+    image: ${APP_IMAGE:-olympic-participation-tracker:latest}
     container_name: olympic-frontend
     ports:
       - "80:80"
